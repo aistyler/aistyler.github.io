@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1.00001,viewport-fit=cover">
+
+<script src="https://www.gstatic.com/firebasejs/6.0.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/6.0.1/firebase-auth.js"></script>
+<script src="https://cdn.firebase.com/libs/firebaseui/4.0.0/firebaseui.js"></script>
+<link type="text/css" rel="stylesheet" href="https://cdn.firebase.com/libs/firebaseui/4.0.0/firebaseui.css" />
+<style> body { margin: 0; } </style>
+</head>
+<body>
+
+<div id="container">
+  <h3>Login~</h3>
+  <div id="loading">Loading...</div>
+  <div id="loaded" class="hidden">
+    <div id="main">
+      <div id="user-signed-in" class="hidden">
+        <div id="user-info">
+          <div id="photo-container">
+            <img id="photo">
+          </div>
+          <div id="name"></div>
+          <div id="email"></div>
+          <div id="phone"></div>
+          <div id="is-new-user"></div>
+          <div class="clearfix"></div>
+        </div>
+        <p>
+          <button id="sign-out">Sign Out</button>
+          <!--<button id="delete-account">Delete account</button>-->
+        </p>
+      </div>
+      
+      <div id="user-signed-out" class="hidden">
+        <div id="firebaseui-spa">
+          <div id="firebaseui-container"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/**
+ * universal _postMessage
+ */
+window._postMessage = function (msg) {
+  if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(msg);
+  else window.postMessage.apply(window, arguments);
+}
+window._postMessage('/LOG/starting script...');
+
+if (window.ReactNativeWebView) {
+  function handleMessageFromHost(event) {
+    window._postMessage('/LOG/from ' + event.origin + ': ' + event.data);
+    // event.source <== A reference to the window object that sent the message; you can use this to establish two-way communication between two windows with different origins.
+  }
+  // listen message event
+  document.addEventListener("message", handleMessageFromHost, false);
+}
+
+/**
+ * @return {!Object} The FirebaseUI config.
+ */
+function getUiConfig() {
+  return {
+    'callbacks': {
+      // Called when the user has been successfully signed in.
+      'signInSuccessWithAuthResult': function(authResult, redirectUrl) {
+        if (authResult.user) {
+          handleSignedInUser(authResult.user, (authResult.additionalUserInfo && authResult.additionalUserInfo.isNewUser));
+        }
+        // Do not redirect.
+        return false;
+      }
+    },
+    // Opens IDP Providers sign-in flow in a popup. (or redirect)
+    'signInFlow': 'redirect',
+    'signInOptions': [
+      {
+        provider: firebase.auth.GoogleAuthProvider.PROVIDER_ID,
+        // Required to enable this provider in One-Tap Sign-up.
+        authMethod: 'https://accounts.google.com',
+        // Required to enable ID token credentials for this provider.
+        clientId: CLIENT_ID
+      },
+      {
+        provider: firebase.auth.EmailAuthProvider.PROVIDER_ID,
+        // Whether the display name should be displayed in Sign Up page.
+        requireDisplayName: true,
+        signInMethod: 'password', // 'emailLink'
+      },
+    ],
+    // Terms of service url.
+    'tosUrl': 'https://www.mysite.com',
+    // Privacy policy url.
+    'privacyPolicyUrl': 'https://www.mysite.com',
+    'credentialHelper': CLIENT_ID && CLIENT_ID != 'YOUR_OAUTH_CLIENT_ID' ?
+        firebaseui.auth.CredentialHelper.GOOGLE_YOLO :
+        firebaseui.auth.CredentialHelper.ACCOUNT_CHOOSER_COM
+  };
+}
+
+/**
+ * Displays the UI for a signed in user.
+ * @param {!firebase.User} user
+ */
+var handleSignedInUser = function(user, isNewUser) {
+  document.getElementById('user-signed-in').style.display = 'block';
+  document.getElementById('user-signed-out').style.display = 'none';
+  document.getElementById('name').textContent = user.displayName || '';
+  document.getElementById('email').textContent = user.email || '';
+  document.getElementById('phone').textContent = user.phoneNumber || '';
+  if (user.photoURL) {
+    var photoURL = user.photoURL;
+    // Append size to the photo URL for Google hosted images to avoid requesting
+    // the image with its original resolution (using more bandwidth than needed)
+    // when it is going to be presented in smaller size.
+    if ((photoURL.indexOf('googleusercontent.com') != -1) ||
+        (photoURL.indexOf('ggpht.com') != -1)) {
+      photoURL = photoURL + '?sz=' +
+          document.getElementById('photo').clientHeight;
+    }
+    document.getElementById('photo').src = photoURL;
+    document.getElementById('photo').style.display = 'block';
+  } else {
+    document.getElementById('photo').style.display = 'none';
+  }
+
+  window._postMessage("LOGGED_IN/" + user.uid, '*');
+
+  // get id token
+  user.getIdToken()
+  .then(function(token) {
+    return handleSignedDone(user, token);
+  })
+  .catch(function(e) {
+    // sign-out 
+    firebase.auth().signOut().then(function() {
+      window._postMessage("/LOGGED_IN/" + user.uid, '*');
+    });
+  });
+};
+
+/**
+ * Displays the UI for a signed out user.
+ */
+var handleSignedOutUser = function() {
+  document.getElementById('user-signed-in').style.display = 'none';
+  document.getElementById('user-signed-out').style.display = 'block';
+  ui.start('#firebaseui-container', getUiConfig());
+  window._postMessage("/LOGGED_OUT/", '*');
+};
+  
+var handleSignedDone = function(user, token) {
+  console.log('USER:', user);
+  // Take the uri from the params
+  var qs = decodeURIComponent(document.location.search);
+  var baseUri = undefined;
+  if (qs) {
+    baseUri = qs.split('?linkingUri=')[1];
+  }
+  if (baseUri === undefined || !baseUri) {
+    console.log("no base uri");
+    return;
+    //baseUri = "inferstyle://main";
+  }
+  console.log('base uri', baseUri);
+  
+  setTimeout(function() {
+    alert(baseUri);
+    window.location.href = baseUri + '?message=' + encodeURIComponent(token + '/' + JSON.stringify(user));
+  }, 1000);
+}
+
+/**
+ * Initializes the app.
+ */
+var initApp = function() {
+  console.log('>>> initApp');
+  window._postMessage("/LOG/initApp: " + !!firebase, '*');
+
+  document.getElementById('sign-out').addEventListener('click', function() {
+    firebase.auth().signOut();
+  });
+  //document.getElementById('delete-account').addEventListener(
+  //  'click', function() {
+  //    deleteAccount();
+  //});
+};
+
+(function _bootstrap() {
+  // Take the uri from the params
+  var qs = decodeURIComponent(document.location.search);
+  var baseUri = undefined;
+  if (qs) {
+    baseUri = qs.split('?linkingUri=')[1];
+  }
+  if (baseUri === undefined || !baseUri) {
+    baseUri = "inferstyle://main";
+  }
+  
+  //setTimeout(function() {
+  //  alert(baseUri);
+  //  window.location.href = baseUri + '?message=' + encodeURIComponent('Redirected automatically by timer');
+  //}, 3000);
+  
+})();
+
+window.addEventListener('load', initApp);
+
+var config = {
+    apiKey: "AIzaSyBCtmlLvrcCaH64K5WDebogBD7sRlEXlRI",
+    authDomain: "dev00-216902.firebaseapp.com",
+    databaseURL: "https://dev00-216902.firebaseio.com",
+    projectId: "dev00-216902",
+    storageBucket: "dev00-216902.appspot.com",
+    messagingSenderId: "411555640109",
+    appId: "1:411555640109:web:820cdd5feda9b5d7"
+};
+
+firebase.initializeApp(config);
+
+// Google OAuth Client ID, needed to support One-tap sign-up.
+// Set to null if One-tap sign-up is not supported.
+var CLIENT_ID = null; //'YOUR_OAUTH_CLIENT_ID';
+
+// Listen to change in auth state so it displays the correct UI for when
+// the user is signed in or not.
+firebase.auth().onAuthStateChanged(function(user) {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('loaded').style.display = 'block';
+  user ? handleSignedInUser(user) : handleSignedOutUser();
+});
+
+// Initialize the FirebaseUI Widget using Firebase.
+var ui = new firebaseui.auth.AuthUI(firebase.auth());
+// Disable auto-sign in.
+ui.disableAutoSignIn();
+
+</script>
+
+</body>
+</html>
